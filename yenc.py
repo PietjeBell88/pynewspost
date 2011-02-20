@@ -5,32 +5,34 @@ ENC_TABLE = ''.join([chr((i + 42) % 256) for i in xrange(256)])
 def yencode(data):
     return data.translate(ENC_TABLE).replace('=', '=\x7d').replace('\x00', '=\x40').replace('\r', '=\x4d').replace('\n', '=\x4a')
 
-def nntpyencwrap(encdata, name, fsize, psize, pcrc32, part, chars_per_line, lines_per_part): # part starts counting at 1
+def yencwrap(data, name, fsize, part, parts, linelength, lines): # part starts counting at 1
+    psize = len(data)
+    crcstr = '%08X' % (zlib.crc32(data) & 0xFFFFFFFF)
+    encdata = yencpart(data, linelength)
     t = []
-    begin = (part - 1) * chars_per_line * lines_per_part + 1
+    begin = (part - 1) * linelength * lines + 1
     end = begin + psize - 1
-    header = '=ybegin part=%d line=%d size=%d name=%s\r\n=ypart begin=%d end=%d\r\n' % (part, chars_per_line, fsize, name, begin, end)
+    header = '=ybegin part=%d line=%d size=%d name=%s\r\n=ypart begin=%d end=%d\r\n' % (part, linelength, fsize, name, begin, end)
     t.append(header)
     t.append(encdata) # assume encdata is from nntpyencpart and therefore ends with CRLF
-    footer = '\r\n=yend size=%d part=%d pcrc32=%s' % (psize, part, pcrc32)
+    footer = '\r\n=yend size=%d part=%d pcrc32=%s' % (psize, part, crcstr)
     t.append(footer)
     return ''.join(t)
 
-def nntpyencpart(data, chars_per_line):
+def yencpart(data, linelength):
     bytes = len(data)
     encdata = yencode(data)
-    crcstr = '%08X' % (zlib.crc32(data) & 0xFFFFFFFF)
     lines = []
     pointer = 0
     while 1:
         try:
             if encdata[pointer] == '.':
                 lines.append('=\x6e')
-                lines.append(encdata[pointer + 1:pointer + chars_per_line - 1])
-                pointer += chars_per_line - 1
+                lines.append(encdata[pointer + 1:pointer + linelength - 1])
+                pointer += linelength - 1
             else:
-                lines.append(encdata[pointer:pointer + chars_per_line])
-                pointer += chars_per_line
+                lines.append(encdata[pointer:pointer + linelength])
+                pointer += linelength
             if lines[len(lines) - 1][-1] == '=':
                 lines.append(encdata[pointer])
                 pointer += 1
@@ -43,4 +45,4 @@ def nntpyencpart(data, chars_per_line):
     encdata = None
     partstr = ''.join(lines)
     lines = None
-    return (partstr, crcstr)
+    return partstr
